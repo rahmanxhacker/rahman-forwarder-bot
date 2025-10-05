@@ -1,0 +1,138 @@
+#!/usr/bin/env python3
+# forwarder_final_fixed.py — Rahman Forwarder (Clean + Working)
+
+import logging
+import asyncio
+from telethon import TelegramClient, events
+import requests, json, tempfile, re, os
+
+# ===== CONFIG =====
+API_ID = 23876572
+API_HASH = "c11adf77da8fba4709b9d3b161eabcdb"
+BOT_TOKEN = "7958952337:AAEGbv8XF9KPWyn9mDxTPmJ4fQSFP-uJV48"  # <-- Replace with your bot token
+# ==================
+
+# ---------- Owner / Channel ----------
+GROUP_LINK = "https://t.me/Rahmanxhacker"
+OWNER_USERNAME = "@RahmanX_official"
+OWNER_URL = f"https://t.me/{OWNER_USERNAME.lstrip('@')}"
+
+# ===== Source & Target Groups =====
+SOURCE_GROUPS = [
+    -1002721450223,
+    -1002970093455,
+    -1002781143657,
+    -1002529224908,
+    -1002773564230,
+    -1002740833354,
+    -1002333897920
+]
+
+TARGET_GROUPS = [
+    -1002586991912,
+    -1002991637909
+]
+
+# ===== Footer =====
+OWNER_LINE = f'👑 OWNER: <a href="{OWNER_URL}">{OWNER_USERNAME}</a>'
+DEV_LINE   = "💻 DEVELOPER: RAHMAN X ANONYMOUS🎭"
+POWER_LINE = "⚡ POWER BY RAHMAN X ANONYMOUS🥶"
+
+FOOTER = (
+    f"\n\n{OWNER_LINE}\n"
+    f"{DEV_LINE}\n"
+    f"{POWER_LINE}\n"
+    f"🔗 <a href=\"{OWNER_URL}\">Contact OWNER</a>\n"
+    f"📢 <a href=\"{GROUP_LINK}\">ALL NUMBER CHANNEL</a>"
+)
+
+INLINE_KEYBOARD = {
+    "inline_keyboard": [
+        [{"text": "📞 Contact OWNER", "url": OWNER_URL}],
+        [{"text": "📢 All Number Channel", "url": GROUP_LINK}]
+    ]
+}
+
+# ===== Logging =====
+logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s: %(message)s')
+
+# ===== Telethon Client =====
+client = TelegramClient("forwarder_user_session", API_ID, API_HASH)
+
+# ===== Text sanitizer =====
+def sanitize_text(text: str) -> str:
+    if not text:
+        return text
+    # Replace t.me / telegram.me links
+    text = re.sub(r'https?://(t\.me|telegram\.me)/\S+', GROUP_LINK, text, flags=re.IGNORECASE)
+    # Replace usernames with group link
+    text = re.sub(r'@([A-Za-z0-9_]{4,})', GROUP_LINK, text)
+    # Remove unwanted footer lines
+    text = re.sub(r'(?im)^\s*(👑|💻|⚡|🔗|📢|owner|developer|power|contact|channel).*$','', text, flags=re.MULTILINE)
+    # Clean multiple new lines
+    text = re.sub(r'\n\s*\n+', '\n\n', text).strip()
+    return text
+
+# ===== Bot send functions =====
+def _send_text(chat_id:int,text:str):
+    url=f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    payload={
+        "chat_id":str(chat_id),
+        "text":text,
+        "parse_mode":"HTML",
+        "disable_web_page_preview":True,
+        "reply_markup":json.dumps(INLINE_KEYBOARD)
+    }
+    r=requests.post(url,data=payload,timeout=30)
+    return r.ok,r.text
+
+def _send_file(chat_id:int,filepath:str,caption:str=""):
+    url=f"https://api.telegram.org/bot{BOT_TOKEN}/sendDocument"
+    with open(filepath,"rb") as f:
+        files={"document":f}
+        data={
+            "chat_id":str(chat_id),
+            "caption":caption,
+            "parse_mode":"HTML",
+            "reply_markup":json.dumps(INLINE_KEYBOARD)
+        }
+        r=requests.post(url,data=data,files=files,timeout=180)
+    return r.ok,r.text
+
+async def send_text(chat_id:int,text:str):
+    return await asyncio.to_thread(_send_text,chat_id,text)
+
+async def send_file(chat_id:int,filepath:str,caption:str=""):
+    return await asyncio.to_thread(_send_file,chat_id,filepath,caption)
+
+# ===== Event handler =====
+@client.on(events.NewMessage(chats=SOURCE_GROUPS))
+async def handler(event):
+    msg = event.message
+    raw_text = msg.message or msg.text or ""
+    safe_text = sanitize_text(raw_text)
+
+    if msg.media:  # If message has media
+        with tempfile.TemporaryDirectory() as td:
+            path = await msg.download_media(file=td)
+            if path and os.path.exists(path):
+                for tgt in TARGET_GROUPS:
+                    caption_raw = msg.message or msg.text or ""
+                    caption_safe = sanitize_text(caption_raw)
+                    caption_final = f"<b>🔔 NEW MEDIA 🔔</b>\n\n{caption_safe}{FOOTER}"
+                    ok, info = await send_file(tgt, path, caption_final)
+                    logging.info("Media sent to %s ok=%s", tgt, ok)
+    else:  # If message is only text
+        text_final = f"<b>🔔 NEW MESSAGE 🔔</b>\n\n{safe_text}{FOOTER}"
+        for tgt in TARGET_GROUPS:
+            ok, info = await send_text(tgt, text_final)
+            logging.info("Text sent to %s ok=%s", tgt, ok)
+
+# ===== Main =====
+async def main():
+    await client.start()
+    logging.info("Rahman Forwarder is running...")
+    await client.run_until_disconnected()
+
+if __name__=="__main__":
+    asyncio.run(main())
