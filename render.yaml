@@ -1,0 +1,5 @@
+services:
+  - type: worker
+    name: rahman-forwarder-bot
+    env: python
+    startCommand: python3 forwarder_final.py
